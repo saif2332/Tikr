@@ -1,28 +1,50 @@
+
 name: Build APK
-on: workflow_dispatch
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
     steps:
-      - uses: actions/checkout@v4
-      - run: unzip -q TikTokLiveMonitor-project.zip
-      - name: Fix JVM target
-        run: |
-          sed -i "s/compileSdk 35/compileSdk 35\n    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }\n    kotlinOptions { jvmTarget = '17' }/" TikTokLiveMonitor/app/build.gradle
-      - uses: actions/setup-java@v4
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
-      - uses: actions/setup-python@v5
+          java-version: "17"
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libtinfo5 cmake libffi-dev libssl-dev \
+            build-essential ccache
+
+      - name: Install Buildozer
+        run: |
+          pip install --upgrade pip
+          pip install cython==0.29.36 virtualenv buildozer
+
+      - name: Build APK
+        run: buildozer -v android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          python-version: '3.11'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.11.1
-      - name: Build
-        working-directory: TikTokLiveMonitor
-        run: gradle assembleDebug --no-daemon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: TikTokLiveMonitor/app/build/outputs/apk/debug/app-debug.apk
+          name: BoxClaimer-apk
+          path: bin/*.apk
+          if-no-files-found: error
