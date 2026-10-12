@@ -15,26 +15,33 @@ jobs:
     env:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
-      ANDROID_NDK_HOME: ${{ github.workspace }}/android-sdk/ndk/25.2.9519653
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Extract project ZIP
+        shell: bash
         run: |
+          set -e
           unzip -o BoxClaimer_project_v3.zip -d extracted
+
           SPEC_FILE="$(find extracted -name buildozer.spec -type f -print -quit)"
           test -n "$SPEC_FILE"
-          echo "Buildozer spec found: $SPEC_FILE"
+
+          # Pin compatible Android build tools
+          sed -i '/^\[app\]/a p4a.branch = v2024.01.21\nandroid.ndk = 25b' "$SPEC_FILE"
+
           echo "PROJECT_DIR=$(dirname "$SPEC_FILE")" >> "$GITHUB_ENV"
+          echo "Project configuration:"
+          cat "$SPEC_FILE"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Set up Java 11
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -48,18 +55,18 @@ jobs:
             autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
             cmake libffi-dev libssl-dev \
-            build-essential ccache \
-            openjdk-11-jdk
+            build-essential ccache
 
       - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "cython==0.29.36" virtualenv buildozer
+          python -m pip install \
+            "cython==0.29.36" virtualenv buildozer
 
-      - name: Install Android SDK and NDK
+      - name: Install Android SDK
         shell: bash
         run: |
-          set -euxo pipefail
+          set -e
 
           mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
 
@@ -67,7 +74,8 @@ jobs:
             https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip \
             -O /tmp/cmdline-tools.zip
 
-          unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
+          unzip -q /tmp/cmdline-tools.zip \
+            -d "$ANDROID_SDK_ROOT/cmdline-tools"
 
           mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" \
              "$ANDROID_SDK_ROOT/cmdline-tools/latest"
@@ -75,23 +83,25 @@ jobs:
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
           set +o pipefail
-          yes | "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses || true
+          yes | "$SDKMANAGER" \
+            --sdk_root="$ANDROID_SDK_ROOT" --licenses || true
           set -o pipefail
 
           "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" \
             "platform-tools" \
-            "platforms;android-31" \
-            "build-tools;31.0.0" \
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
             "ndk;25.2.9519653" \
             "cmake;3.22.1"
 
       - name: Build APK
         shell: bash
-        working-directory: .
         run: |
-          set -euxo pipefail
+          set -e
           cd "$PROJECT_DIR"
+
           export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+
           buildozer -v android debug
 
       - name: Upload APK
@@ -100,4 +110,3 @@ jobs:
           name: BoxClaimer-APK
           path: extracted/**/bin/*.apk
           if-no-files-found: error
-          
